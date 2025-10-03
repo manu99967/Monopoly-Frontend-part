@@ -1,16 +1,81 @@
-# React + Vite
+# 🎲 Monopoly Game Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A fully interactive Monopoly board game built with React, featuring a complete game experience with property trading, chance cards, and multiplayer support.
 
-Currently, two official plugins are available:
+## 🚀 Quick Start
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+```bash
+# Install dependencies
+npm install
 
-## React Compiler
+# Start development server
+npm run dev
 
-The React Compiler is not enabled on this template. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+# Build for production
+npm run build
+```
 
-## Expanding the ESLint configuration
+## 🎮 Game Features
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- **Interactive Board**: Classic Monopoly board with 40 tiles
+- **2-Player Support**: Turn-based gameplay for two players
+- **Property System**: Buy, own, and collect rent on properties
+- **Chance & Community Chest**: Random event cards with various effects
+- **Jail System**: Players can be sent to jail and skip turns
+- **Bankruptcy Detection**: Automatic game over when players run out of money
+- **Real-time Game Log**: Track all game events and transactions
+
+## 🛠️ Tech Stack
+
+- **React 19** - UI framework
+- **Vite** - Build tool and dev server
+- **Tailwind CSS** - Styling and responsive design
+- **React Router** - Navigation between screens
+- **Lucide React** - Icons
+
+## 📁 Project Structure
+
+```
+src/
+├── components/          # Reusable UI components
+│   ├── Board.jsx       # Game board display
+│   ├── Dice.jsx        # Dice rolling component
+│   ├── PlayerInfo.jsx  # Player stats display
+│   ├── BuyModal.jsx    # Property purchase modal
+│   ├── CardModal.jsx   # Chance/Community Chest cards
+│   └── WinModal.jsx    # Game over screen
+├── screens/            # Main application screens
+│   ├── HomeScreen.jsx  # Welcome/start screen
+│   └── GameScreen.jsx  # Main game interface
+├── context/            # React context for state management
+│   └── GameContext.jsx # Global game state
+├── data/               # Game data and configuration
+│   ├── boardData.js    # Board tiles and properties
+│   ├── chanceCards.js  # Chance card definitions
+│   └── communityChestCards.js # Community Chest cards
+└── assets/             # Images and static files
+```
+
+## 🎯 How to Play
+
+1. **Start**: Click "Start Game" on the home screen
+2. **Roll Dice**: Click the dice to move around the board
+3. **Buy Properties**: Purchase unowned properties you land on
+4. **Pay Rent**: Pay rent when landing on opponent's properties
+5. **Draw Cards**: Follow instructions on Chance/Community Chest cards
+6. **Win**: Last player with money wins!
+
+## 🔧 Available Scripts
+
+- `npm run dev` - Start development server
+- `npm run build` - Build for production
+- `npm run preview` - Preview production build
+- `npm run lint` - Run ESLint
+
+## 🎨 Game Components
+
+- **Board**: 40-tile Monopoly board with properties, special tiles, and player tokens
+- **Player Management**: Track money, properties, and position for each player
+- **Property Trading**: Buy/sell system with rent collection
+- **Event Cards**: Chance and Community Chest cards with various effects
+- **Game Logic**: Turn management, bankruptcy detection, and win conditions

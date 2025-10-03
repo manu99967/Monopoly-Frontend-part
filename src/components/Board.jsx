@@ -15,43 +15,47 @@ export default function Board({ players }) {
   return (
     <div className="flex justify-center items-center p-4">
       <div className="grid grid-cols-[repeat(11,80px)] grid-rows-[repeat(11,80px)] border-4 border-black bg-green-200 relative">
-        {/* Top Tiles */}
-        {top.map((tile, i) => (
-          <Tile
-            key={`top-${i}`}
-            tile={tile}
-            orientation="top"
-            players={getPlayersOnTile(tile.id)}
-          />
-        ))}
-
-        {/* Right Tiles */}
-        {right.map((tile, i) => (
-          <Tile
-            key={`right-${i}`}
-            tile={tile}
-            orientation="right"
-            players={getPlayersOnTile(tile.id)}
-          />
-        ))}
-
-        {/* Bottom Tiles */}
+        {/* Bottom Tiles (0-10) */}
         {bottom.map((tile, i) => (
           <Tile
             key={`bottom-${i}`}
             tile={tile}
             orientation="bottom"
             players={getPlayersOnTile(tile.id)}
+            style={{ gridColumn: i + 1, gridRow: 11 }}
           />
         ))}
 
-        {/* Left Tiles */}
+        {/* Left Tiles (11-19) */}
         {left.map((tile, i) => (
           <Tile
             key={`left-${i}`}
             tile={tile}
             orientation="left"
             players={getPlayersOnTile(tile.id)}
+            style={{ gridColumn: 1, gridRow: 10 - i }}
+          />
+        ))}
+
+        {/* Top Tiles (20-30) */}
+        {top.map((tile, i) => (
+          <Tile
+            key={`top-${i}`}
+            tile={tile}
+            orientation="top"
+            players={getPlayersOnTile(tile.id)}
+            style={{ gridColumn: i + 1, gridRow: 1 }}
+          />
+        ))}
+
+        {/* Right Tiles (31-39) */}
+        {right.map((tile, i) => (
+          <Tile
+            key={`right-${i}`}
+            tile={tile}
+            orientation="right"
+            players={getPlayersOnTile(tile.id)}
+            style={{ gridColumn: 11, gridRow: i + 2 }}
           />
         ))}
 
