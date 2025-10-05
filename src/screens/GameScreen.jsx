@@ -1,213 +1,161 @@
-
 import { useState, useEffect } from "react";
+// Import your UI components
 import Board from "../components/Board";
 import Dice from "../components/Dice";
 import LogPanel from "../components/LogPanel";
 import PlayerInfo from "../components/PlayerInfo";
 import WinModal from "../components/WinModal";
 import CardModal from "../components/CardModal";
-import BuyModal from "../components/BuyModal"; // popup for buying
-import { boardData } from "../data/boardData";
-import { chanceCards, communityChestCards } from "../data/card";
+import BuyModal from "../components/BuyModal";
+// ✅ Import all necessary context elements
+import { useGame, ACTIONS } from "../context/GameContext"; 
 
 export default function GameScreen() {
-  const [players, setPlayers] = useState([
-    { id: 1, name: "Player 1", position: 0, money: 1500, color: "red", properties: [], inJail: false },
-    { id: 2, name: "Player 2", position: 0, money: 1500, color: "blue", properties: [], inJail: false },
-  ]);
+  const {
+    players,
+    currentPlayer,
+    dice,
+    rolling,
+    rollDice,
+    log,
+    activeTile,
+    setActiveTile, 
+    buyProperty,
+    activeCard,
+    setActiveCard,
+    endTurn,
+    // 🔑 CRITICAL: Function to advance turn when skipping buy
+    skipBuyAndEndTurn, 
+    // 🔑 CRITICAL: State for controlling game flow/buttons
+    actionRequired,
+  } = useGame();
 
-  const [currentPlayer, setCurrentPlayer] = useState(0);
-  const [dice, setDice] = useState([1, 1]);
-  const [rolling, setRolling] = useState(false);
-  const [log, setLog] = useState([]);
-  const [winner, setWinner] = useState(null);
-  const [card, setCard] = useState(null);
-  const [buyTile, setBuyTile] = useState(null);
+  const [winner, setWinner] = useState(null);
 
-  // Check for winner
-  useEffect(() => {
-    const alive = players.filter((p) => p.money > 0);
-    if (alive.length === 1) setWinner(alive[0]);
-  }, [players]);
+// --- State and Effect Management ---
 
-  // Roll dice
-  const rollDice = () => {
-    if (rolling) return;
-    setRolling(true);
+  // 🏁 Check for a winner
+  useEffect(() => {
+    const alive = players.filter((p) => p.money > 0);
+    if (alive.length === 1) setWinner(alive[0]); 
+  }, [players]);
 
-    // If in jail, skip movement
-    if (players[currentPlayer].inJail) {
-      setLog((prev) => [
-        ...prev,
-        `${players[currentPlayer].name} is in jail and skips this turn.`,
-      ]);
-      setPlayers((prev) =>
-        prev.map((p, i) =>
-          i === currentPlayer ? { ...p, inJail: false } : p
-        )
-      );
-      setCurrentPlayer((prev) => (prev + 1) % players.length);
-      setRolling(false);
-      return;
-    }
+  const currentPlayerData = players[currentPlayer];
 
-    // Dice animation
-    const animationTime = 500;
-    const intervalTime = 100;
-    let elapsed = 0;
+// --- Handler Functions (Frontend Logic) ---
 
-    const interval = setInterval(() => {
-      setDice([Math.ceil(Math.random() * 6), Math.ceil(Math.random() * 6)]);
-      elapsed += intervalTime;
-      if (elapsed >= animationTime) clearInterval(interval);
-    }, intervalTime);
+  // 🎲 Handle rolling
+  const handleRoll = async () => {
+    if (rolling) return;
+    // rollDice() handles the full sequence and sets the next actionRequired state
+    await rollDice();
+  };
 
-    setTimeout(() => {
-      clearInterval(interval);
-      const d1 = Math.ceil(Math.random() * 6);
-      const d2 = Math.ceil(Math.random() * 6);
-      const steps = d1 + d2;
-      setDice([d1, d2]);
+  // 💰 Handle buying (Used for the 'Buy' button in BuyModal)
+  const handleBuy = async () => {
+    if (activeTile) {
+      // buyProperty handles the purchase and calls endTurn() on success
+      await buyProperty(activeTile); 
+    }
+  };
 
-      setPlayers((prev) => {
-        const updated = prev.map((p, i) =>
-          i === currentPlayer ? { ...p, position: (p.position + steps) % 40 } : p
-        );
+  // ❌ Skip buying (Used for the 'Skip' button in BuyModal)
+  // 🔑 FIX 1: This uses the context function which clears the modal and calls endTurn().
+  const handleSkipBuy = async () => {
+    await skipBuyAndEndTurn(); 
+  };
 
-        const tile = boardData[updated[currentPlayer].position];
+  // 🃏 Apply card effects (Used for the 'OK' button in CardModal)
+  const handleApplyCard = async () => {
+    if (activeCard) {
+      // 1. Clear the active card to close the modal
+      setActiveCard(null);
 
-        setLog((prevLog) => [
-          ...prevLog,
-          `${updated[currentPlayer].name} rolled ${d1} + ${d2} = ${steps}, landed on ${tile.name}`,
-        ]);
+      // 2. 🔑 FIX 2: Must call endTurn() to clear actionRequired and advance the turn
+      await endTurn(); 
+    }
+  };
 
-        // Chance / Community Chest
-        if (tile.type === "chance") {
-          const cardIndex = Math.floor(Math.random() * chanceCards.length);
-          setCard(chanceCards[cardIndex]);
-        } else if (tile.type === "community") {
-          const cardIndex = Math.floor(Math.random() * communityChestCards.length);
-          setCard(communityChestCards[cardIndex]);
-        }
-        // Property tiles: trigger Buy Modal if unowned
-        else if (tile.price && !tile.owner) {
-          setBuyTile(tile);
-        }
-        // Rent
-        else if (tile.price && tile.owner && tile.owner !== updated[currentPlayer].id) {
-          const ownerIndex = updated.findIndex((p) => p.id === tile.owner);
-          const rent = Math.floor(tile.price / 2);
-          updated[currentPlayer].money -= rent;
-          updated[ownerIndex].money += rent;
-          setLog((prev) => [
-            ...prev,
-            `${updated[currentPlayer].name} paid $${rent} rent to ${updated[ownerIndex].name}`,
-          ]);
-        }
-        // Jail
-        if (tile.type === "jail") {
-          updated[currentPlayer].inJail = true;
-          setLog((prev) => [...prev, `${updated[currentPlayer].name} goes to Jail!`]);
-        }
+  // 🔄 End turn (Manual fallback button)
+  const handleEndTurn = async () => {
+    await endTurn();
+  };
 
-        // Bankruptcy check
-        updated.forEach((p) => {
-          if (p.money < 0) {
-            setLog((prevLog) => [
-              ...prevLog,
-              `${p.name} went bankrupt! All properties returned.`,
-            ]);
-            p.properties.forEach((prop) => {
-              prop.owner = null;
-            });
-            p.money = 0;
-            p.properties = [];
-          }
-        });
 
-        return updated;
-      });
+// --- Component Rendering ---
 
-      setCurrentPlayer((prev) => (prev + 1) % players.length);
-      setRolling(false);
-    }, animationTime);
-  };
+  return (
+    <div className="flex h-screen bg-green-100">
+      {/* 🟩 Game Board */}
+      <div className="flex-1 flex items-center justify-center p-4">
+        <Board players={players} />
+      </div>
 
-  // Buy property
-  const buyProperty = (tile) => {
-    setPlayers((prev) =>
-      prev.map((p, i) =>
-        i === currentPlayer
-          ? {
-              ...p,
-              money: p.money - tile.price,
-              properties: [...p.properties, tile],
-            }
-          : p
-      )
-    );
-    tile.owner = players[currentPlayer].id;
-    setLog((prev) => [
-      ...prev,
-      `${players[currentPlayer].name} bought ${tile.name} for $${tile.price}`,
-    ]);
-    setBuyTile(null);
-  };
+      {/* 📋 Side Panel */}
+      <div className="w-80 p-4 bg-white shadow-xl flex flex-col gap-4">
+        <h1 className="text-2xl font-bold mb-4 text-center">Monopoly</h1>
 
-  // Skip buying property
-  const skipProperty = () => {
-    setLog((prev) => [
-      ...prev,
-      `${players[currentPlayer].name} chose not to buy ${buyTile.name}`,
-    ]);
-    setBuyTile(null);
-  };
+        {/* Current Player Info */}
+        <PlayerInfo players={players} currentPlayer={currentPlayer} />
 
-  // Apply card effect
-  const applyCard = (effect) => {
-    setPlayers((prev) =>
-      prev.map((p, i) =>
-        i === currentPlayer ? effect(p) : p
-      )
-    );
-    setCard(null);
-  };
+        {/* Dice controls */}
+        <div className="flex flex-col items-center gap-2">
+          {/* 🔑 Control: Dice is disabled unless actionRequired is ACTIONS.ROLL */}
+          <Dice 
+            dice={dice} 
+            rolling={rolling} 
+            onRoll={handleRoll} 
+            disabled={actionRequired !== ACTIONS.ROLL} // <--- Key to unsticking the dice
+          />
+          {/* Manual End Turn is only visible when the action is NONE (e.g., player landed on Free Parking) */}
+          {actionRequired === ACTIONS.NONE && (
+            <button
+             onClick={handleEndTurn}
+             className="px-4 py-2 rounded font-semibold bg-blue-500 hover:bg-blue-600 text-white"
+            >
+              End Turn
+            </button>
+          )}
 
-  return (
-    <div className="flex h-screen bg-green-100">
-      {/* Board */}
-      <div className="flex-1 flex items-center justify-center p-4">
-        <Board players={players} />
-      </div>
+        </div>
 
-      {/* Side Panel */}
-      <div className="w-80 p-4 bg-white shadow-xl flex flex-col gap-4">
-        <h1 className="text-2xl font-bold mb-4 text-center">Monopoly</h1>
-        <PlayerInfo players={players} currentPlayer={currentPlayer} />
-        <Dice dice={dice} rolling={rolling} onRoll={rollDice} />
-        <LogPanel log={log} />
-      </div>
+        <div className="text-center text-sm text-gray-600 mt-2">
+          🎯 Current Action:{" "}
+          <strong>
+            {actionRequired}
+          </strong>
+        </div>
 
-      {/* Buy Modal */}
-      {buyTile && (
-        <BuyModal
-          tile={buyTile}
-          onBuy={() => buyProperty(buyTile)}
-          onSkip={skipProperty}
-        />
-      )}
+        {/* Game Log */}
+        <LogPanel log={log} />
+      </div>
 
-      {/* Card Modal */}
-      {card && (
-        <CardModal
-          card={card}
-          onApply={() => applyCard(card.action)}
-          onClose={() => setCard(null)}
-        />
-      )}
+      {/* 🏠 Buy Modal: Only show if actionRequired is BUY */}
+     {activeTile && actionRequired === ACTIONS.BUY && (
+        <BuyModal 
+          tile={activeTile} 
+          onBuy={handleBuy} 
+          onSkip={handleSkipBuy} // Calls skipBuyAndEndTurn()
+          currentPlayerData={currentPlayerData} 
+        />
+      )}
 
-      {/* Winner Modal */}
-      {winner && <WinModal winner={winner} onRestart={() => window.location.reload()} />}
-    </div>
-  );
+      {/* 🎴 Card Modal: Only show if actionRequired is CHANCE or COMMUNITY_CHEST */}
+      {activeCard && (actionRequired === ACTIONS.CHANCE || actionRequired === ACTIONS.COMMUNITY_CHEST) && (
+        <CardModal
+          card={activeCard}
+          onApply={handleApplyCard} // Calls handleApplyCard which calls endTurn()
+          onClose={handleApplyCard} // Use the same handler for closing/resolving
+        />
+      )}
+
+      {/* 🏆 Winner Modal */}
+      {winner && (
+        <WinModal
+          winner={winner}
+          onRestart={() => window.location.reload()}
+       />
+      )}
+    </div>
+  );
 }
