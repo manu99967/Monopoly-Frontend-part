@@ -25,6 +25,7 @@ export function GameProvider({ children }) {
     const [log, setLog] = useState([]);
     const [activeTile, setActiveTile] = useState(null);
     const [activeCard, setActiveCard] = useState(null);
+    const [isGameOver, setIsGameOver] = useState(false); // 🔑 NEW STATE: Game Over Flag
     
     // CRITICAL: Controls the current phase of the game
     const [actionRequired, setActionRequired] = useState(ACTIONS.ROLL); 
@@ -55,6 +56,12 @@ export function GameProvider({ children }) {
             const playersData = await playersRes.json();
             const stateData = await stateRes.json();
 
+            // 🔑 Check if game is over immediately after fetching players
+            if (playersData.length <= 1) {
+                setIsGameOver(true);
+                addLog("🏁 Game Over: Only one or zero players remaining.");
+            }
+            
             setPlayers(playersData);
             setCurrentPlayer(stateData.current_player || 0);
             setActionRequired(ACTIONS.ROLL);
@@ -70,42 +77,66 @@ export function GameProvider({ children }) {
     }, []);
 
     // -----------------------------
-    // END TURN / NEXT TURN
+    // END TURN / NEXT TURN 🔑 UPDATED LOGIC
     // -----------------------------
-    const endTurn = async () => {
-        // Reset active states before fetching next player
+    // Pass the eliminated player's ID to help the backend find the *next* player index
+    const endTurn = async (eliminatedPlayerId = null) => { 
+        // 🔑 Prevent turn cycle if game is over
+        if (isGameOver) {
+            addLog("Game Over. Cannot advance turn.");
+            return;
+        }
+
         setActiveTile(null);
         setActiveCard(null);
 
         try {
             const res = await fetch(`${API}/next_turn`, { 
                 method: "POST",
+                headers: { "Content-Type": "application/json" },
+                // 🔑 Pass eliminated ID (though the backend's logic handles it robustly now)
+                body: JSON.stringify({ eliminated_player_id: eliminatedPlayerId }),
             });
             const data = await res.json();
 
             if (data.error) {
+                 // The backend will return an error if it hits the end of the line (e.g., only one player left)
                 addLog(data.error);
+                if (data.error.includes("Game Over")) {
+                    setIsGameOver(true);
+                }
             } else {
                 setCurrentPlayer(data.current_player);
                 addLog(`🔄 Next turn: Player ${data.current_player + 1}`);
             }
 
+            // Always fetch fresh player data (important for elimination cleanup)
             const playersRes = await fetch(`${API}/players`);
             const playersData = await playersRes.json();
             setPlayers(playersData);
+
+            // 🔑 FINAL CHECK: If player list is now 1, set game over.
+            if (playersData.length === 1 && !isGameOver) {
+                setIsGameOver(true);
+                addLog(`🏆 ${playersData[0].name} wins!`);
+            }
+
         } catch (err) {
             console.error(err);
             addLog("Error ending turn");
         }
         
-        // Set the next action to ROLL for the new player (CRITICAL for unsticking the dice)
-        setActionRequired(ACTIONS.ROLL); 
+        // Set the next action to ROLL for the new player (only if game isn't over)
+        if (!isGameOver) {
+            setActionRequired(ACTIONS.ROLL); 
+        }
     };
     
     // -----------------------------
     // AUTOMATIC ACTIONS (Rent, Tax, Jail)
     // -----------------------------
 
+    // 🔑 UPDATED FUNCTION: Pay Rent - Handles Bankruptcy
     const payRent = async (playerId, propertyPosition) => {
         try {
             const res = await fetch(`${API}/pay-rent`, {
@@ -117,9 +148,25 @@ export function GameProvider({ children }) {
 
             if (data.error) {
                 addLog(`❌ ${data.error}`);
-                // If rent fails (e.g., bankruptcy), the turn still ends
                 await endTurn();
+            } else if (data.eliminated_player_id) { // 🔑 BANKRUPTCY CHECK
+                addLog(`💥 Player ${data.eliminated_player_id} is out! ${data.message}`);
+                
+                // Update owner's money (owner is still in the game)
+                if (data.owner) {
+                    updatePlayerState(data.owner); 
+                }
+                
+                // If the backend says the game is over, set the flag
+                if (data.game_over) {
+                    setIsGameOver(true);
+                }
+
+                // Call endTurn to cycle to the next *remaining* player
+                await endTurn(data.eliminated_player_id); 
+                
             } else {
+                // Standard transaction
                 setPlayers((prev) => {
                     const updated = [...prev];
                     const payerIndex = updated.findIndex((p) => p.id === data.payer.id);
@@ -129,7 +176,6 @@ export function GameProvider({ children }) {
                     return updated;
                 });
                 addLog(`🏠 ${data.message}`);
-                // Rent paid successfully, end the turn
                 await endTurn();
             }
         } catch (err) {
@@ -139,10 +185,9 @@ export function GameProvider({ children }) {
         }
     };
 
-    // 🔑 COMPLETED FUNCTION: Pay Tax
+    // 🔑 UPDATED FUNCTION: Pay Tax - Handles Bankruptcy
     const payTax = async (playerId, taxPosition) => {
         try {
-            // NOTE: Assuming your Flask API handles the tax calculation internally
             const res = await fetch(`${API}/pay-tax`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -152,22 +197,32 @@ export function GameProvider({ children }) {
 
             if (data.error) {
                 addLog(`❌ ${data.error}`);
+            } else if (data.eliminated_player_id) { // 🔑 BANKRUPTCY CHECK
+                addLog(`💥 Player ${data.eliminated_player_id} is out! ${data.message}`);
+                
+                // If the backend says the game is over, set the flag
+                if (data.game_over) {
+                    setIsGameOver(true);
+                }
+                
+                // Call endTurn to cycle to the next *remaining* player
+                await endTurn(data.eliminated_player_id);
+                
             } else {
                 updatePlayerState(data.player);
                 addLog(`💸 ${data.message}`);
+                await endTurn(); // Standard turn end
             }
         } catch (err) {
             console.error(err);
             addLog("⚠️ Error paying tax");
+            await endTurn();
         }
-        // CRITICAL: Tax payment is automatic and ends the turn.
-        await endTurn();
     };
 
-    // 🔑 COMPLETED FUNCTION: Go To Jail
+    // 🔑 COMPLETED FUNCTION: Go To Jail (No bankruptcy check needed, money isn't lost here)
     const goToJail = async (playerId) => {
         try {
-            // NOTE: Assuming your Flask API handles moving the player to position 10 and setting in_jail=true
             const res = await fetch(`${API}/go-to-jail`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -185,15 +240,14 @@ export function GameProvider({ children }) {
             console.error(err);
             addLog("⚠️ Error sending player to jail");
         }
-        // CRITICAL: Going to jail is automatic and ends the turn.
         endTurn();
     };
 
     // ----------------------------------------------------
-    // 🎲 ROLL DICE & MOVE PLAYER
+    // 🎲 ROLL DICE & MOVE PLAYER (Logic unchanged, relies on the updated action handlers)
     // ----------------------------------------------------
     const rollDice = async () => {
-        if (actionRequired !== ACTIONS.ROLL || rolling) return; 
+        if (actionRequired !== ACTIONS.ROLL || rolling || isGameOver) return; // 🔑 Check isGameOver
         
         const current = players[currentPlayer];
         if (!current) {
@@ -239,14 +293,12 @@ export function GameProvider({ children }) {
                 return;
             }
 
-            // Update state with final player and tile data
             setActiveTile(landData.tile || null);
             updatePlayerState(landData.player); 
             addLog(`[Tile Action] ${landData.message}`);
 
-            // --- Doubles Check (If your backend supports returning 'rolled_doubles') ---
+            // --- Doubles Check ---
             if (rollData.rolled_doubles) {
-                // Keep the turn on the current player and allow another roll
                 setActionRequired(ACTIONS.ROLL); 
                 addLog("🎲 Rolled doubles! Roll again.");
                 setRolling(false);
@@ -258,13 +310,10 @@ export function GameProvider({ children }) {
             
             switch (action) {
                 case ACTIONS.BUY:
-                    // INTERACTIVE: Show Buy Modal
                     setActionRequired(ACTIONS.BUY); 
                     break;
                     
                 case ACTIONS.PAY_RENT:
-                    // AUTOMATIC: Pay rent and end turn
-                    // Ensure landData.tile is available here to get position
                     if (landData.tile) {
                         await payRent(landData.player.id, landData.tile.position);
                     } else {
@@ -274,13 +323,10 @@ export function GameProvider({ children }) {
                     break;
                     
                 case ACTIONS.GO_TO_JAIL:
-                    // AUTOMATIC: Send player to jail and end turn
                     await goToJail(landData.player.id);
                     break;
 
                 case ACTIONS.TAX: 
-                    // AUTOMATIC: Pay tax and end turn
-                    // Ensure landData.tile is available here to get position
                     if (landData.tile) {
                         await payTax(landData.player.id, landData.tile.position);
                     } else {
@@ -291,7 +337,6 @@ export function GameProvider({ children }) {
                     
                 case ACTIONS.CHANCE:
                 case ACTIONS.COMMUNITY_CHEST:
-                    // INTERACTIVE: Draw card and wait for resolution in CardModal
                     await drawCard(); 
                     setActionRequired(action); 
                     break;
@@ -299,7 +344,6 @@ export function GameProvider({ children }) {
                 case ACTIONS.NONE:
                 case ACTIONS.OWNED: 
                 default:
-                    // Passive tiles (Go, Free Parking, etc.) - end turn
                     endTurn();
                     break;
             }
@@ -314,9 +358,10 @@ export function GameProvider({ children }) {
     };
     
     // -----------------------------
-    // BUY PROPERTY
+    // BUY PROPERTY (Logic unchanged)
     // -----------------------------
     const buyProperty = async (tile) => {
+        // ... (existing implementation) ...
         try {
             const current = players[currentPlayer];
             if (!current) return;
@@ -336,37 +381,33 @@ export function GameProvider({ children }) {
                 endTurn();
             } else {
                 updatePlayerState(data.player); 
-                setActiveTile(null); // Close the modal
+                setActiveTile(null); 
                 addLog(`💰 ${data.message}`);
-
                 setActionRequired(ACTIONS.ROLL); 
-                // Turn is over after a successful purchase.
                 await endTurn(); 
             }
         } catch (err) {
             console.error(err);
             addLog("⚠️ Error buying property");
-
             await endTurn();
         }
     };
 
-    // 🟢 CRITICAL HANDLER: Handles skipping the purchase and advancing the turn
+    // 🟢 CRITICAL HANDLER: Handles skipping the purchase and advancing the turn (Logic unchanged)
     const skipBuyAndEndTurn = async () => {
         addLog("⏭️ Player skipped buying the property. Auction is next (if implemented).");
         setActiveTile(null); // Clear the modal display
-        await endTurn(); // CRITICAL: Ends the turn and sets actionRequired to ACTIONS.ROLL for the next player.
+        await endTurn(); 
     };
 
     // -----------------------------
-    // DRAW CARD
+    // DRAW CARD (Logic unchanged)
     // -----------------------------
     const drawCard = async () => {
         try {
             const res = await fetch(`${API}/cards/draw`, { method: "POST" });
             const card = await res.json();
             setActiveCard(card);
-            // NOTE: The CardModal handles the resolution (applying effects and calling endTurn)
             addLog(`🎴 Card drawn: ${card.text || card.effect}`);
         } catch (err) {
             console.error(err);
@@ -393,8 +434,11 @@ export function GameProvider({ children }) {
                 addLog,
                 endTurn,
                 payRent, 
+                payTax, // 🔑 Export payTax
+                goToJail, // 🔑 Export goToJail
                 drawCard,
                 actionRequired, 
+                isGameOver, // 🔑 EXPORT NEW STATE
             }}
         >
             {children}
