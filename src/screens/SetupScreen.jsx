@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-// NOTE: You must ensure you have a /reset-game endpoint in Flask
-// to clear previous players/state, otherwise new players will stack.
-const API = "http://127.0.0.1:5555";
+// 🔑 FIX 1: CHANGE IP ADDRESS TO LOCALHOST NAME
+// All network requests must use 'localhost' to match your Flask CORS settings
+// and avoid the '127.0.0.1' conflict.
+// 🔑 FIX 2: ADD '/api' TO THE BASE URL
+// Your Flask routes are under the '/api' blueprint, so the base URL must include it.
+const API = "http://localhost:5555/api"; 
 
 export default function SetupScreen() {
     const navigate = useNavigate();
@@ -31,33 +34,33 @@ export default function SetupScreen() {
         setStatus("Initializing game...");
         
         try {
-            // 1. Reset Game State (Highly Recommended)
-            // Call a Flask endpoint that deletes players, properties, and resets GameState
-            await fetch(`${API}/reset-game`, { method: 'POST' }); 
+            // 1. Reset Game State (Now correctly hits: http://localhost:5555/api/reset-game)
+            await fetch(`${API}/reset-game`, { method: 'POST', credentials:'include'});
 
-            // 2. Add all new players to the database
+            // 2. Add all new players to the database (Now correctly hits: http://localhost:5555/api/players)
             for (const name of players) {
                 const res = await fetch(`${API}/players`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ name: name }),
+                    credentials: 'include'
                 });
                 if (!res.ok) {
-                    throw new Error(`Failed to add player ${name}`);
+                    throw new Error(`Failed to add player ${name} (Status:${res.status})`);
                 }
             }
             
             // 3. Navigate to the game board
-            // GameContext.jsx will now run fetchGameState() and load these new players.
             navigate('/game'); 
             
         } catch (error) {
             console.error("Game setup failed:", error);
-            setStatus(`Error: ${error.message}. Please ensure your Flask server is running and the /reset-game endpoint exists.`);
+            setStatus(`Error: ${error.message}. Please check console for network errors.`);
         }
     };
 
     return (
+        // ... (rest of the component JSX remains unchanged) ...
         <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-4">
             <h1 className="text-4xl font-bold mb-8 text-blue-800">Monopoly Player Setup</h1>
 

@@ -1,57 +1,77 @@
 import Tile from "./Tile";
-import { boardData } from "../data/boardData";
+import { boardData } from "../data/boardData"; // Assuming this is the full 40-tile array
 import logo from "../assets/monopoly-logo.png";
 
-export default function Board({ players }) {
-  const bottom = boardData.slice(0, 11);
-  const left = boardData.slice(11, 20);
-  const top = boardData.slice(20, 31).reverse();
-  const right = boardData.slice(31, 40).reverse();
+export default function Board({ players, currentPlayer }) {
+  // --- Standard Monopoly Board Layout ---
+  // The full boardData array is 40 tiles long (index 0 to 39).
+  // When slicing, we need to know the original index for position tracking.
+  // bottom: 0 to 10 (11 tiles)
+  // left: 11 to 19 (9 tiles)
+  // top: 20 to 30 (11 tiles)
+  // right: 31 to 39 (9 tiles)
 
-  // Get players on a specific tile
-  const getPlayersOnTile = (tileIndex) =>
-    players.filter((p) => p.position === tileIndex);
+  const bottom = boardData.slice(0, 11); // Index 0-10
+  const left = boardData.slice(11, 20); // Index 11-19
+  const top = boardData.slice(20, 31).reverse(); // Index 30 down to 20 (Note the reverse)
+  const right = boardData.slice(31, 40).reverse(); // Index 39 down to 31 (Note the reverse)
+
+  /**
+   * @description Filters the players array to find who is currently standing on a given tile position.
+   * @param {number} tilePosition The index of the tile on the board (0-39).
+   * @returns {Array} List of players on that tile.
+   */
+  const getPlayersOnTile = (tilePosition) =>
+    players.filter((p) => p.position === tilePosition);
+
+  // Helper to calculate the original board index for reversed arrays
+  const getTopTileIndex = (i) => 30 - i; // 30, 29, 28, ... 20
+  const getRightTileIndex = (i) => 39 - i; // 39, 38, 37, ... 31
 
   return (
     <div className="flex justify-center items-center p-4">
       <div className="grid grid-cols-[repeat(11,80px)] grid-rows-[repeat(11,80px)] border-4 border-black bg-green-200 relative">
-        {/* Top Tiles */}
+        {/* Top Tiles (Index 30 down to 20, rendered from left-to-right on screen) */}
         {top.map((tile, i) => (
           <Tile
-            key={`top-${i}`}
+            key={`top-${tile.name}-${i}`}
             tile={tile}
             orientation="top"
-            players={getPlayersOnTile(tile.id)}
+            players={getPlayersOnTile(getTopTileIndex(i))}
+            currentPlayer={currentPlayer}
           />
         ))}
 
-        {/* Right Tiles */}
+        {/* Right Tiles (Index 39 down to 31, rendered from top-to-bottom on screen) */}
         {right.map((tile, i) => (
           <Tile
-            key={`right-${i}`}
+            key={`right-${tile.name}-${i}`}
             tile={tile}
             orientation="right"
-            players={getPlayersOnTile(tile.id)}
+            players={getPlayersOnTile(getRightTileIndex(i))}
+            currentPlayer={currentPlayer}
           />
         ))}
 
-        {/* Bottom Tiles */}
+        {/* Bottom Tiles (Index 0 to 10, rendered from left-to-right on screen) */}
         {bottom.map((tile, i) => (
           <Tile
-            key={`bottom-${i}`}
+            key={`bottom-${tile.name}-${i}`}
             tile={tile}
             orientation="bottom"
-            players={getPlayersOnTile(tile.id)}
+            players={getPlayersOnTile(i)}
+            currentPlayer={currentPlayer}
           />
         ))}
 
-        {/* Left Tiles */}
+        {/* Left Tiles (Index 11 to 19, rendered from bottom-to-top on screen) */}
         {left.map((tile, i) => (
           <Tile
-            key={`left-${i}`}
+            key={`left-${tile.name}-${i}`}
             tile={tile}
             orientation="left"
-            players={getPlayersOnTile(tile.id)}
+            players={getPlayersOnTile(11 + i)}
+            currentPlayer={currentPlayer}
           />
         ))}
 
@@ -67,6 +87,3 @@ export default function Board({ players }) {
     </div>
   );
 }
-
-
-

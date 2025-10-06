@@ -24,10 +24,12 @@ export default function GameScreen() {
     activeCard,
     setActiveCard,
     endTurn,
-    // 🔑 CRITICAL: Function to advance turn when skipping buy
     skipBuyAndEndTurn, 
-    // 🔑 CRITICAL: State for controlling game flow/buttons
     actionRequired,
+    // 🔑 NEW: Functions to check user authorization
+    isCurrentPlayerTurn,
+    canPerformAction,
+    getCurrentPlayer,
   } = useGame();
 
   const [winner, setWinner] = useState(null);
@@ -36,59 +38,84 @@ export default function GameScreen() {
 
   // 🏁 Check for a winner
   useEffect(() => {
-    const alive = players.filter((p) => p.money > 0);
-    if (alive.length === 1) setWinner(alive[0]); 
-  }, [players]);
+    // Filter out players with zero or less money (eliminated)
+    const alive = players.filter((p) => p.money > 0); 
+    if (alive.length === 1 && !winner) { // Only set winner if one is left and none is set yet
+        setWinner(alive[0]);
+    } else if (alive.length > 1 && winner) {
+        setWinner(null); // Clear winner if more than one is left (e.g., restart)
+    }
+  }, [players, winner]);
 
-  const currentPlayerData = players[currentPlayer];
+  const currentPlayerData = getCurrentPlayer(); // Get the current player object
 
 // --- Handler Functions (Frontend Logic) ---
 
   // 🎲 Handle rolling
   const handleRoll = async () => {
-    if (rolling) return;
-    // rollDice() handles the full sequence and sets the next actionRequired state
+    // Block rolling if currently rolling or if it's not this user's turn
+    if (rolling || !canPerformAction(ACTIONS.ROLL)) return;
     await rollDice();
   };
 
   // 💰 Handle buying (Used for the 'Buy' button in BuyModal)
   const handleBuy = async () => {
-    if (activeTile) {
-      // buyProperty handles the purchase and calls endTurn() on success
-      await buyProperty(activeTile); 
-    }
+    // Block buying if it's not this user's turn or if there's no active tile to buy
+    if (!canPerformAction(ACTIONS.BUY) || !activeTile) return;
+    await buyProperty(activeTile.position); 
   };
 
   // ❌ Skip buying (Used for the 'Skip' button in BuyModal)
-  // 🔑 FIX 1: This uses the context function which clears the modal and calls endTurn().
   const handleSkipBuy = async () => {
+    // Block skipping if it's not this user's turn
+    if (!canPerformAction(ACTIONS.BUY)) return;
     await skipBuyAndEndTurn(); 
   };
 
   // 🃏 Apply card effects (Used for the 'OK' button in CardModal)
   const handleApplyCard = async () => {
-    if (activeCard) {
-      // 1. Clear the active card to close the modal
-      setActiveCard(null);
+    // Check if the current player is the one who should be resolving the card
+    const isCardAction = actionRequired === ACTIONS.CHANCE || actionRequired === ACTIONS.COMMUNITY_CHEST;
 
-      // 2. 🔑 FIX 2: Must call endTurn() to clear actionRequired and advance the turn
-      await endTurn(); 
-    }
+    if (!isCurrentPlayerTurn() || !isCardAction || !activeCard) return;
+
+    setActiveCard(null);
+    // After card is cleared, the turn must end to continue the game
+    await endTurn(); 
   };
 
   // 🔄 End turn (Manual fallback button)
   const handleEndTurn = async () => {
+    // Block manual end turn if it's not their turn or action is not NONE
+    if (!isCurrentPlayerTurn() || actionRequired !== ACTIONS.NONE) return;
     await endTurn();
   };
 
 
 // --- Component Rendering ---
 
+    // 🔑 Derived states to control UI visibility and enablement (The missing link!)
+    const canRoll = canPerformAction(ACTIONS.ROLL);
+    const showBuyModal = activeTile && canPerformAction(ACTIONS.BUY);
+    const showCardModal = activeCard && (actionRequired === ACTIONS.CHANCE || actionRequired === ACTIONS.COMMUNITY_CHEST);
+    const showEndTurnButton = isCurrentPlayerTurn() && actionRequired === ACTIONS.NONE;
+
+
   return (
     <div className="flex h-screen bg-green-100">
-      {/* 🟩 Game Board */}
-      <div className="flex-1 flex items-center justify-center p-4">
-        <Board players={players} />
+      {/* 🟩 Game Board + Dice Info */}
+      <div className="flex-1 flex flex-col items-center justify-center p-4">
+        {/* Show current player and dice roll result above board */}
+        <div className="mb-4 text-center">
+          <h2 className="text-xl font-bold text-blue-700">
+            Turn: {currentPlayerData?.name || "?"}
+          </h2>
+          <div className="text-lg mt-2">
+            🎲 Dice: {dice[0]} + {dice[1]} = <span className="font-bold">{dice[0] + dice[1]}</span>
+          </div>
+        </div>
+        {/* Pass currentPlayer to Board for highlighting */}
+        <Board players={players} currentPlayer={currentPlayer} />
       </div>
 
       {/* 📋 Side Panel */}
@@ -100,15 +127,15 @@ export default function GameScreen() {
 
         {/* Dice controls */}
         <div className="flex flex-col items-center gap-2">
-          {/* 🔑 Control: Dice is disabled unless actionRequired is ACTIONS.ROLL */}
+          {/* 🔑 Dice is disabled unless canRoll is true */}
           <Dice 
             dice={dice} 
             rolling={rolling} 
             onRoll={handleRoll} 
-            disabled={actionRequired !== ACTIONS.ROLL} // <--- Key to unsticking the dice
+            disabled={!canRoll} 
           />
-          {/* Manual End Turn is only visible when the action is NONE (e.g., player landed on Free Parking) */}
-          {actionRequired === ACTIONS.NONE && (
+          {/* Manual End Turn is only visible when the conditions are met */}
+          {showEndTurnButton && (
             <button
              onClick={handleEndTurn}
              className="px-4 py-2 rounded font-semibold bg-blue-500 hover:bg-blue-600 text-white"
@@ -130,22 +157,22 @@ export default function GameScreen() {
         <LogPanel log={log} />
       </div>
 
-      {/* 🏠 Buy Modal: Only show if actionRequired is BUY */}
-     {activeTile && actionRequired === ACTIONS.BUY && (
+      {/* 🏠 Buy Modal: Only show if canPerformAction(ACTIONS.BUY) is true */}
+     {showBuyModal && (
         <BuyModal 
           tile={activeTile} 
           onBuy={handleBuy} 
-          onSkip={handleSkipBuy} // Calls skipBuyAndEndTurn()
+          onSkip={handleSkipBuy} 
           currentPlayerData={currentPlayerData} 
         />
       )}
 
-      {/* 🎴 Card Modal: Only show if actionRequired is CHANCE or COMMUNITY_CHEST */}
-      {activeCard && (actionRequired === ACTIONS.CHANCE || actionRequired === ACTIONS.COMMUNITY_CHEST) && (
+      {/* 🎴 Card Modal: Only show if a card is active and actionRequired matches */}
+      {showCardModal && (
         <CardModal
           card={activeCard}
-          onApply={handleApplyCard} // Calls handleApplyCard which calls endTurn()
-          onClose={handleApplyCard} // Use the same handler for closing/resolving
+          onApply={handleApplyCard} 
+          onClose={handleApplyCard} 
         />
       )}
 
