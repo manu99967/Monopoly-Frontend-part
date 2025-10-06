@@ -1,30 +1,64 @@
 import React from "react";
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import HomeScreen from "./screens/HomeScreen";
-import SetupScreen from "./screens/SetupScreen"; // <-- NEW IMPORT
+import SetupScreen from "./screens/SetupScreen"; 
 import GameScreen from "./screens/GameScreen";
-import { GameProvider } from "./context/GameContext";
+// 🔑 NEW IMPORTS
+import LoginScreen from "./screens/LoginScreen"; 
+import SignupScreen from "./screens/SignupScreen";
+// 🔑 IMPORT CONTEXT
+import { GameProvider, useGame } from "./context/GameContext"; 
 
-// Helper component to conditionally wrap GameScreen in GameProvider
-const GameScreenWrapper = () => (
-    <GameProvider>
-        <GameScreen />
-    </GameProvider>
-);
+
+// 🔑 NEW: A wrapper to protect routes requiring authentication
+const ProtectedRoute = ({ children }) => {
+    const { user, isCheckingSession } = useGame();
+    
+    if (isCheckingSession) {
+        // You would typically show a loading spinner here
+        return <div>Loading session...</div>;
+    }
+
+    if (!user) {
+        // Redirect to the login page if not logged in
+        return <Navigate to="/login" replace />;
+    }
+
+    return children;
+};
 
 function App() {
   return (
     <Router>
-      <Routes>
-        {/* 1. Landing Page */}
-        <Route path="/" element={<HomeScreen />} />
+      {/* 🔑 Move GameProvider up to wrap ALL routes that need user context */}
+      <GameProvider> 
+        <Routes>
+          {/* 1. Public Auth Routes */}
+          <Route path="/" element={<HomeScreen />} />
+          <Route path="/login" element={<LoginScreen />} /> 
+          <Route path="/signup" element={<SignupScreen />} />
 
-        {/* 2. Player Name Input / Setup */}
-        <Route path="/setup" element={<SetupScreen />} /> 
+          {/* 2. Protected Game Setup Routes */}
+          <Route 
+              path="/setup" 
+              element={
+                  <ProtectedRoute>
+                      <SetupScreen /> 
+                  </ProtectedRoute>
+              } 
+          /> 
 
-        {/* 3. Main Game Board (Wrapped in GameProvider) */}
-        <Route path="/game" element={<GameScreenWrapper />} />
-      </Routes>
+          {/* 3. Protected Main Game Board Route */}
+          <Route 
+              path="/game" 
+              element={
+                  <ProtectedRoute>
+                      <GameScreen />
+                  </ProtectedRoute>
+              } 
+          />
+        </Routes>
+      </GameProvider>
     </Router>
   );
 }

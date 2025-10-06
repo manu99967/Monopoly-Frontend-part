@@ -1,7 +1,14 @@
+/* UPDATED app.css */
+
 #root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
+  /* 🔑 MAREKEBISHO MUHIMU */
+  /* Ondoa max-width na margin auto. Ruhusu #root kujaza skrini. */
+  width: 100%; 
+  min-height: 100vh; /* Hakikisha inachukua urefu kamili wa skrini */
+  padding: 0; /* Ondoa padding ya juu-juu, weka padding kwenye components */
+  /* max-width na margin auto huenda zilitoka kwenye template ya vite */
+  /* Ulikuwa: max-width: 1280px; margin: 0 auto; padding: 2rem; */
+  
   text-align: center;
 }
 
@@ -39,4 +46,100 @@
 
 .read-the-docs {
   color: #888;
+}
+
+/* --- AUTH STYLES (ZIMEBAKIZWA KAMA ZILIVYO) --- */
+
+.auth-wrapper {
+  /* Full viewport size */
+  min-height: 100vh;
+  display: flex;
+  /* Center horizontally and vertically */
+  justify-content: center; 
+  align-items: center; 
+  /* Set a nice background for the whole page */
+  background-color: #f4f4f9; 
+}
+
+/* --- 2. Main Form Box (Auth Container) --- */
+
+.auth-container {
+  background: white;
+  padding: 40px;
+  /* Rounded corners */
+  border-radius: 12px; 
+  /* Soft shadow for depth */
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1); 
+  width: 100%;
+  max-width: 400px;
+  text-align: center;
+}
+
+.auth-title {
+  color: #007bff; /* Monopoly blue/primary color */
+  margin-bottom: 25px;
+  font-size: 2em;
+  font-weight: 700;
+}
+
+/* --- 3. Form Elements --- */
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 15px; /* Space between input fields */
+}
+
+.auth-input {
+  padding: 12px 15px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 16px;
+  transition: border-color 0.3s;
+}
+
+.auth-input:focus {
+  border-color: #007bff;
+  outline: none;
+}
+
+.auth-button {
+  background-color: #007bff;
+  color: white;
+  padding: 12px 20px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 18px;
+  font-weight: bold;
+  transition: background-color 0.3s ease;
+  margin-top: 10px;
+}
+
+.auth-button:hover {
+  background-color: #0056b3;
+}
+
+/* --- 4. Footer and Errors --- */
+
+.error-message {
+  color: #dc3545; /* Red color for error messages */
+  margin-top: 15px;
+  font-weight: 600;
+}
+
+.auth-footer {
+  margin-top: 20px;
+  font-size: 14px;
+  color: #666;
+}
+
+.auth-footer a {
+  color: #007bff;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.auth-footer a:hover {
+  text-decoration: underline;
 }
