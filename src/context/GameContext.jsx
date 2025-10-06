@@ -19,22 +19,23 @@ const GameContext = createContext();
 
 export function GameProvider({ children }) {
     const [players, setPlayers] = useState([]);
-    const [currentPlayer, setCurrentPlayer] = useState(null); // Changed to null/player object ID
+    const [currentPlayer, setCurrentPlayer] = useState(null); // The ID of the current Player in the game turn
     const [dice, setDice] = useState([1, 1]);
     const [rolling, setRolling] = useState(false);
     const [log, setLog] = useState([]);
-    const [activeTile, setActiveTile] = useState(null);
-    const [activeCard, setActiveCard] = useState(null);
+    const [activeTile, setActiveTile] = useState(null); // Tile object the player landed on
+    const [activeCard, setActiveCard] = useState(null); // Card object if drawn
     const [isGameOver, setIsGameOver] = useState(false);
     
     // 🔑 NEW STATE: User Authentication
-    const [user, setUser] = useState(null);
+    const [user, setUser] = useState(null); // The logged-in User object
     const [isCheckingSession, setIsCheckingSession] = useState(true);
 
     // CRITICAL: Controls the current phase of the game
     const [actionRequired, setActionRequired] = useState(ACTIONS.ROLL); 
 
-    const API = "http://127.0.0.1:5555";
+    // 🔑 FINAL FIX: Change 127.0.0.1 to localhost to resolve cross-origin cookie issue
+    const API = "http://localhost:5555/api"; 
 
     const addLog = (msg) => setLog((l) => [...l, msg]);
 
@@ -47,29 +48,47 @@ export function GameProvider({ children }) {
         return players.find(p => p.id === currentPlayer);
     };
 
-    // Helper: To simplify updating a player in state (unused if fetching full state, but good to have)
-    const updatePlayerState = (newPlayerData) => {
-        setPlayers((prev) => {
-            const updated = [...prev];
-            const index = updated.findIndex((p) => p.id === newPlayerData.id);
-            if (index >= 0) updated[index] = newPlayerData;
-            return updated;
-        });
+    // Helper: Checks if it's the current user's turn
+    const isCurrentPlayerTurn = () => {
+        // If user is not set, allow all actions (for local play)
+        if (!user) return true;
+        const player = getCurrentPlayer();
+        // If player has a username, compare to logged-in user
+        if (player && player.username && user.username) {
+            return player.username === user.username;
+        }
+        // Otherwise, compare by id
+        return player && player.id === currentPlayer;
+    };
+
+    // Helper: Checks if the current player can perform a given action
+    const canPerformAction = (action) => {
+        // Only allow if it's the current player's turn and the required action matches
+        return isCurrentPlayerTurn() && actionRequired === action && !isGameOver;
     };
 
     const fetchGameState = async () => {
         try {
+            // These calls now correctly include credentials: 'include'
             const [playersRes, stateRes] = await Promise.all([
-                fetch(`${API}/players`),
-                fetch(`${API}/game-state`),
+                fetch(`${API}/players`, { credentials: 'include' }),
+                fetch(`${API}/game-state`, { credentials: 'include' }),
             ]);
+            
+            // If authentication failed, stop and log it
+            if (playersRes.status === 401 || stateRes.status === 401) {
+                   addLog("⚠️ Not logged in or session expired. Cannot fetch game data.");
+                   setPlayers([]);
+                   setCurrentPlayer(null);
+                   return;
+            }
+
             const playersData = await playersRes.json();
             const stateData = await stateRes.json();
 
             setPlayers(playersData);
-            // Assuming current_player from backend is the Player ID (or index, depending on your backend)
-            setCurrentPlayer(stateData.current_player_id || playersData[0]?.id || null);
-            setDice(stateData.last_roll || [1, 1]); // Get last roll
+            setCurrentPlayer(stateData.current_player_id || playersData[0]?.id || null); 
+            setDice(stateData.last_roll || [1, 1]);
             setActionRequired(stateData.action_required || ACTIONS.ROLL);
             setIsGameOver(stateData.game_over || false);
             addLog("🎮 Game state refreshed.");
@@ -81,17 +100,22 @@ export function GameProvider({ children }) {
     };
 
     // -----------------------------
-    // AUTHENTICATION FUNCTIONS (unchanged, but included for completeness)
+    // AUTHENTICATION FUNCTIONS
     // -----------------------------
 
     const checkSession = async () => {
         setIsCheckingSession(true);
         try {
-            const res = await fetch(`${API}/check-session`);
+            const res = await fetch(`${API}/check-session`, {
+                credentials: 'include',
+            });
             if (res.ok) {
                 const userData = await res.json();
                 setUser(userData);
                 addLog(`✅ Session restored for ${userData.username}`);
+                await fetchGameState(); 
+            } else {
+                setUser(null);
             }
         } catch (err) {
             console.error("Session check failed:", err);
@@ -106,12 +130,14 @@ export function GameProvider({ children }) {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username, password }),
+                credentials: 'include', 
             });
             const data = await res.json();
 
             if (res.ok) {
                 setUser(data);
                 addLog(`👋 Welcome back, ${data.username}!`);
+                await fetchGameState(); // Load game data immediately
                 return true;
             } else {
                 addLog(`Login Failed: ${data.error}`);
@@ -129,12 +155,14 @@ export function GameProvider({ children }) {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username, password }),
+                credentials: 'include', 
             });
             const data = await res.json();
 
             if (res.ok) {
                 setUser(data);
                 addLog(`🎉 Account created! Welcome, ${data.username}!`);
+                await fetchGameState(); // Load game data immediately
                 return true;
             } else {
                 addLog(`Signup Failed: ${data.error}`);
@@ -148,8 +176,13 @@ export function GameProvider({ children }) {
 
     const logoutUser = async () => {
         try {
-            await fetch(`${API}/logout`, { method: 'POST' });
+            await fetch(`${API}/logout`, { 
+                method: 'POST',
+                credentials: 'include', 
+            });
             setUser(null);
+            setPlayers([]); 
+            setCurrentPlayer(null); 
             addLog("🚪 Successfully logged out.");
             return true;
         } catch (err) {
@@ -159,7 +192,7 @@ export function GameProvider({ children }) {
     };
 
     // -----------------------------
-    // CORE GAME ACTIONS
+    // CORE GAME ACTIONS 
     // -----------------------------
 
     const endTurn = async (eliminatedPlayerId = null) => { 
@@ -170,25 +203,24 @@ export function GameProvider({ children }) {
 
         setActiveTile(null);
         setActiveCard(null);
-        setActionRequired(ACTIONS.ROLL); // Set for the next player
+        setActionRequired(ACTIONS.ROLL); 
 
         try {
             const res = await fetch(`${API}/next_turn`, { 
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ eliminated_player_id: eliminatedPlayerId }),
+                credentials: 'include',
             });
             const data = await res.json();
 
             if (data.error) {
                 addLog(`Error ending turn: ${data.error}`);
             } else {
-                // Backend provides the new player ID
                 setCurrentPlayer(data.current_player_id); 
                 addLog(`🔄 Turn switched.`);
             }
             
-            // CRITICAL: Always refresh state after a turn switch
             await fetchGameState(); 
 
         } catch (err) {
@@ -198,15 +230,36 @@ export function GameProvider({ children }) {
     };
     
     const rollDice = async () => {
-        if (actionRequired !== ACTIONS.ROLL || rolling || isGameOver) return;
+        // Retrieve the current player object using the helper
+        const player = getCurrentPlayer();
+
+        if (actionRequired !== ACTIONS.ROLL || rolling || isGameOver || !player) {
+            // If the player isn't ready or doesn't exist, exit.
+            if (!player) addLog("Error: Current player identity missing.");
+            return;
+        }
 
         setRolling(true);
         addLog("🎲 Rolling dice...");
 
         try {
-            const res = await fetch(`${API}/roll-dice`, { method: "POST" });
+            const res = await fetch(`${API}/roll-dice`, { 
+                method: "POST",
+                // 🛑 FIX for 415: Add Content-Type header
+                headers: { 'Content-Type': 'application/json' },
+                // 🛑 FIX for 415/403: Send the player ID in the body
+                body: JSON.stringify({ player_id: player.id }),
+                credentials: 'include', 
+            });
             const data = await res.json();
 
+            if (res.status === 401 || res.status === 403) {
+                   // Handle specific 401 (Unauthorized) or 403 (Forbidden/Not your turn) errors
+                addLog(`Error rolling: ${data.error || "Authentication failed or not your turn."}`);
+                setRolling(false);
+                return;
+            }
+            
             if (data.error) {
                 addLog(`Error rolling: ${data.error}`);
                 setRolling(false);
@@ -220,11 +273,15 @@ export function GameProvider({ children }) {
             await new Promise(resolve => setTimeout(resolve, 1500)); 
 
             // After move/action is determined by backend, refresh state
-            await fetchGameState(); 
-            
+            await fetchGameState();
+
+            // Debug: Log backend response for player positions and current player
+            console.log("🎯 Updated players from backend:", data.players);
+            console.log("🎯 Current player after roll:", data.current_player);
+
             // Backend should have set the next action required (BUY, PAY_RENT, NONE, etc.)
             addLog(`Moved to position ${data.new_position}. Action: ${data.action_required}`);
-            
+
             // Set any necessary helper states (e.g., the tile/card landed on)
             setActiveTile(data.active_tile || null);
             setActiveCard(data.active_card || null);
@@ -238,18 +295,28 @@ export function GameProvider({ children }) {
         }
     };
     
+    // 🚨 NOTE: The following actions need the CURRENT PLAYER's ID and credentials: 'include'
+    
     const buyProperty = async (propertyId) => {
+        const player = getCurrentPlayer();
+        const propertyPosition = propertyId; 
+        if (!player || actionRequired !== ACTIONS.BUY || !activeTile) return addLog("Cannot buy now.");
+        
         try {
             const res = await fetch(`${API}/buy-property`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ property_id: propertyId }),
+                body: JSON.stringify({ 
+                    property_position: activeTile.position,
+                    player_id: player.id // Send current player ID
+                }),
+                credentials: 'include', // Needed for authorization
             });
             const data = await res.json();
 
             if (res.ok) {
                 addLog(`💰 ${data.player_name} bought ${data.property_name} for $${data.cost}.`);
-                setActionRequired(ACTIONS.NONE); // Allow player to manage turn (end turn, etc.)
+                setActionRequired(ACTIONS.NONE);
                 await fetchGameState();
             } else {
                 addLog(`Purchase Failed: ${data.error}`);
@@ -261,28 +328,34 @@ export function GameProvider({ children }) {
 
     const skipBuyAndEndTurn = async () => {
         addLog("Player skipped buying property and is ending turn.");
-        // We rely on the backend to handle the auction/next turn logic
         await endTurn();
     };
 
     const payRent = async () => {
+        const player = getCurrentPlayer();
+        if (!player || actionRequired !== ACTIONS.PAY_RENT || !activeTile) return addLog("Cannot pay rent now.");
+        
         try {
-            const res = await fetch(`${API}/pay-rent`, { method: 'POST' });
+            const res = await fetch(`${API}/pay-rent`, { 
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    player_id: player.id, 
+                    property_position: activeTile.position // Assuming backend needs this
+                }),
+                credentials: 'include',
+            });
             const data = await res.json();
 
             if (res.ok) {
                 addLog(`💸 Paid $${data.amount} rent to ${data.owner_name}.`);
                 
-                // IMPORTANT: Rent is a mandatory action that usually ends the turn.
-                // We assume the backend handles the money transfer and advances the turn.
                 if (data.eliminated_player_id) {
                      addLog(`😭 ${data.payer_name} has been eliminated!`);
-                     // Pass the eliminated ID to the general endTurn flow for log/state update
                      await endTurn(data.eliminated_player_id); 
-                } else {
-                    // Refresh state and let endTurn handle the turn switch if backend didn't
-                    await fetchGameState(); 
-                }
+                   } else {
+                     await fetchGameState(); 
+                   }
             } else {
                 addLog(`Rent Failed: ${data.error}`);
             }
@@ -292,13 +365,24 @@ export function GameProvider({ children }) {
     };
     
     const payTax = async () => {
+        const player = getCurrentPlayer();
+        if (!player || actionRequired !== ACTIONS.TAX || !activeTile) return addLog("Cannot pay tax now.");
+        
         try {
-            const res = await fetch(`${API}/pay-tax`, { method: 'POST' });
+            const res = await fetch(`${API}/pay-tax`, { 
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    player_id: player.id, 
+                    tax_position: activeTile.position // Assuming backend needs this
+                }),
+                credentials: 'include',
+            });
             const data = await res.json();
 
             if (res.ok) {
                 addLog(`💵 Paid $${data.amount} in taxes.`);
-                setActionRequired(ACTIONS.NONE); // Allow turn continuation
+                setActionRequired(ACTIONS.NONE);
                 await fetchGameState();
             } else {
                 addLog(`Tax Failed: ${data.error}`);
@@ -309,15 +393,20 @@ export function GameProvider({ children }) {
     };
     
     const goToJail = async () => {
-        // This function is often called internally by rollDice, 
-        // but if it's external, it updates the player state to 'in jail'.
+        const player = getCurrentPlayer();
+        if (!player) return;
+        
         try {
-            const res = await fetch(`${API}/go-to-jail`, { method: 'POST' });
+            const res = await fetch(`${API}/go-to-jail`, { 
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ player_id: player.id }),
+                credentials: 'include',
+            });
             const data = await res.json();
 
             if (res.ok) {
                 addLog(`🚨 Go directly to Jail. Do not pass Go. Do not collect $200.`);
-                // Going to jail automatically ends the turn.
                 await endTurn(); 
             } else {
                 addLog(`Jail failed: ${data.error}`);
@@ -329,14 +418,16 @@ export function GameProvider({ children }) {
     
     const drawCard = async (deck) => {
         try {
-            const res = await fetch(`${API}/draw-card/${deck}`, { method: 'POST' });
+            const res = await fetch(`${API}/cards/draw/${deck}`, { 
+                method: 'POST',
+                credentials: 'include',
+            });
             const data = await res.json();
 
             if (res.ok) {
                 setActiveCard(data.card);
                 addLog(`🃏 Drew a ${deck} Card: ${data.card.text}`);
                 
-                // Backend should determine the next action (pay, move, end turn, etc.)
                 setActionRequired(data.action_required); 
                 await fetchGameState();
             } else {
@@ -352,10 +443,8 @@ export function GameProvider({ children }) {
     // INITIAL MOUNT EFFECT
     // -----------------------------
     useEffect(() => {
+        // Run checkSession on mount, which handles fetching game state on success.
         checkSession();
-        // NOTE: fetchGameState will run regardless of session. 
-        // You might want to delay it until AFTER login if the game isn't persistent.
-        fetchGameState(); 
     }, []); 
 
     // -----------------------------
@@ -385,7 +474,8 @@ export function GameProvider({ children }) {
                 actionRequired, 
                 isGameOver, 
                 getCurrentPlayer,
-                
+                isCurrentPlayerTurn,
+                canPerformAction,
                 // AUTH VALUES
                 user,
                 loginUser,
