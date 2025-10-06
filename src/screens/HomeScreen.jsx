@@ -14,7 +14,8 @@ export default function HomeScreen() {
         Only one player will become the richest and win it all!
       </p>
       <button
-        onClick={() => navigate("/game")}
+        // 🔑 FIX: Navigate to the new setup screen
+        onClick={() => navigate("/setup")} 
         className="px-8 py-4 text-lg font-semibold bg-yellow-400 text-black rounded-2xl shadow-lg hover:bg-yellow-500 transition-transform hover:scale-105"
       >
         Start Game
