@@ -139,7 +139,6 @@ Name	Role	Responsibilities
 Maggie	🎯 Scrum Master / Game Logic Developer	Core game logic (turns, rent, jail, chance cards), backend state management
 Julius	💻 Frontend Lead	UI components, layout, player display
 Emmanuel	🧩 Backend Engineer	Flask API routes, database setup
-Wayne	🎨 UI/UX & Styling	Game visuals, Tailwind styling, animations
 🚀 Future Improvements
 
 Add multiplayer mode (sockets or local hot-seat).
